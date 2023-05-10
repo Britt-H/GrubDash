@@ -33,21 +33,13 @@ function read(req, res, next) {
 }
 
 function update(req, res, next) {
-  // Create update functionality
-  //Grab dishId from route
-  const { data } = req.body;
-  const dishId = res.locals.dishId;
-  const index = dishes.findIndex((dish) => dish.id === dishId);
-  const dish = dishes[index];
+  const dish = res.locals.dish
+  const { data: { name, description, price, image_url } = {} } = req.body
 
-  //destructure all fields from data
-  const { name, description, price, image_url } = data;
-
-  //set template for update
-  if (name) {dish.name = name;}
-  if (description) {dish.description = description;}
-  if (price) {dish.price = price;}
-  if (image_url) {dish.image_url = image_url;}
+  dish.name = name;
+  dish.description = description;
+  dish.price = price
+  dish.image_url = image_url;
 
   res.json({ data: dish });
 };
@@ -71,61 +63,100 @@ function validateDataExists(req, res, next) {
   }
 }
 
-function createValidatorFor(field) {
+//validates field for CREATE/UPDATE
+function fieldValidator(field) {
   return function (req, res, next) {
-    if (req.body.data[field] && req.body.data[field] !== "") {
-      next();
+    if (req.body.data[field]) {
+      if(field === 'price' && (req.body.data[field] < 0 || typeof req.body.data[field] !== 'number')){
+          next({
+              status: 400,
+              message: `Dish must indlude a ${field}`
+          })
+      }else{
+          next();            
+      }
     } else {
       next({
         status: 400,
-        message: `Dish must include a ${field}`
+        message: `Dish must indlude a ${field}`
       })
     }
   }
 }
 
-function validatePrice(req, res, next) {
-  const {price} = req.body.data;
-  if(price > 0 && !isNaN(price)) {
-      next();
-  }
-  else {
-      next({status: 400, message: `Dish must have a price that is an number greater than 0`})
+function validateUpdateId(req, res, next){
+  const dishId = res.locals.dish.id
+  const{ data: { name, description, price, image_url, id } = {} } = req.body;
+
+  if(!id || dishId === id){
+      next()
+  } else {
+      next({
+          status: 400,
+          message: `id: ${id} does not match`
+        })
   }
 }
 
-function validateExists(req, res, next) {
-  const dishId = req.params.dishId;
-  const index = dishes.findIndex((dish) => dish.id === dishId);
-  if (index === -1) {
-    const message = `Dish does not exist: ${dishId}`;
-    return next({ status: 404, message });
-  }
-  res.locals.dish = dishes[index];
-  res.locals.index = index;
-  next();
-}
 
-function validateId(req, res, next) {
-  const id = req.params.dishId;
-  const dish = dishes.find((dish) => dish.id === id);
-  if (!dish) {
-    return next({
+//validation middleware(validates id in route) (READ/UPDATE)
+function validateDishExists(req, res, next) {
+  let { dishId } = req.params;
+  dishId = dishId;
+  let index = dishes.findIndex(dish => dish.id === req.params.dishId);
+  if (index > -1) {
+    let dish = dishes[index];
+    // save the dinosaur that we found for future use
+    res.locals.dish = dish;
+    res.locals.index = index;
+    next();
+  } else {
+    next({
       status: 404,
-      message: `Dish not found with id: ${id}`
-    });
+      message: `Could not find dish with id ${dishId}`
+    })
   }
-  res.locals.dishId = id;
-  res.locals.dish = dish;
-  next();
 }
 
-let fields = ["name", "description", "image_url"];
+
+function deleteDishExists(req, res, next) {
+  let { dishId } = req.params;
+  dishId = dishId;
+  let index = dishes.findIndex(dish => dish.id === req.params.dishId);
+  if (index > -1) {
+    let dish = dishes[index];
+    // save the dinosaur that we found for future use
+    res.locals.dish = dish;
+    res.locals.index = index;
+    next({status: 405});
+  } else {
+    next({
+      status: 405,
+      message: `Could not find dish with id ${dishId}`
+    })
+  }
+}
+
+let fields = ["name", "description", "price", "image_url"];
 
 module.exports = {
   list,
-  create: [validateDataExists, ...fields.map(createValidatorFor), validatePrice, create],
-  read: [validateExists, read],
-  update: [validateExists, validateDataExists, ...fields.map(createValidatorFor), validatePrice, validateId, update],
-  destroy: [validateExists, destroy],
+  create: [
+    validateDataExists, 
+    ...fields.map(fieldValidator), 
+    create
+  ],
+  read: [
+    validateDishExists, 
+    read
+  ],
+  update: [
+    validateDishExists, 
+    validateUpdateId, 
+    ...fields.map(fieldValidator),  
+    update
+  ],
+  destroy: [
+    deleteDishExists, 
+    destroy],
 };
